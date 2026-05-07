@@ -1,0 +1,48 @@
+# WordPress local configuration
+wp-config.php
+
+# User uploads and generated media
+wp-content/uploads/
+
+# Backups, exports, and migration plugin output
+wp-content/ai1wm-backups/
+*.sql
+*.sql.gz
+*.zip
+*.tar
+*.tar.gz
+*.bak
+
+# Cache and generated runtime files
+wp-content/cache/
+wp-content/upgrade/
+wp-content/advanced-cache.php
+wp-content/wp-cache-config.php
+wp-content/object-cache.php
+
+# Logs
+*.log
+error_log
+wp-content/debug.log
+
+# Dependency directories, if used by custom themes/plugins
+node_modules/
+vendor/
+
+# Build outputs, if used by custom themes/plugins
+dist/
+build/
+
+# Environment files
+.env
+.env.*
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Codex/local assistant metadata
+.agents/
+.codex/
