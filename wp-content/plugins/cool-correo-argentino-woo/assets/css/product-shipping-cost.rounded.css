@@ -1,0 +1,179 @@
+.coolca-product-cost-calculator{
+	padding: 10px;
+	padding-top: 20px;
+	border: 1px solid #162269;
+	border-radius: 8px;
+	position: relative;
+	margin-top: 10px;
+	margin-bottom: 10px;
+
+	background: rgba(243, 244, 245, 0.04);
+	border-radius: 16px;
+	box-shadow: 0 2px 0px rgba(0, 0, 0, 0.1);
+	backdrop-filter: blur(5px);
+	-webkit-backdrop-filter: blur(5px);
+	border: 1px solid rgba(22, 34, 105, 0.15);
+}
+
+.coolca-product-cost-calculator h3,
+.coolca-product-cost-calculator ul,
+.coolca-product-cost-calculator p{
+	margin: 0px;
+	margin-bottom: 5px;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form{
+	display: flex;
+	flex-direction: column;
+}
+
+.coolca-product-cost-calculator .coolca-form-instructions{
+	font-size: 14px;
+	font-style: italic;
+	margin-top: 15px;
+}
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields{
+	display: flex;
+	flex-direction: row;
+	align-items: stretch;	
+	border-radius: 8px;
+	width: 100%;
+	justify-content: center;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p{
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	margin: 0px;
+	padding: 4px;
+	border: 1px solid #162269;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p:first-child{
+	flex-grow: 1;
+	border-top-left-radius: 8px;
+	border-bottom-left-radius: 8px;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p:nth-child(2){
+	width: 10%;
+	min-width: 55px;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p:nth-child(3){
+	width: fit-content;
+	background-color: #162269;
+	border-top-right-radius: 8px;
+	border-bottom-right-radius: 8px;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p select{
+	border: none;
+    outline: none;
+    scroll-behavior: smooth;
+	-webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background: transparent;
+	text-align: center;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p input{
+	padding: 0px;
+	border-color: transparent;
+	border: 0px;
+	outline: 0px;
+	text-align: center;
+	width: 100%;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-form .coolca-form-fields p a{
+	padding-left: 10px;
+	padding-right: 10px;
+	font-size: 12px;
+	text-transform: uppercase;
+	color: white;
+	text-decoration: none;
+}
+
+.coolca-product-cost-calculator.processing:before{
+	content:'';
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	width: 100%;
+	height: 100%;
+	background-color: white;
+	opacity: 0.5;
+}
+
+.coolca-product-cost-calculator .custom-loader{
+	display: none;
+}
+.coolca-product-cost-calculator.processing .custom-loader{
+	display: inherit;
+}
+.coolca-product-cost-calculator .custom-loader{
+	position: absolute;
+	top: 45%;
+	left: 45%;
+	width:50px;
+	height:50px;
+	border-radius:50%;
+	padding:1px;
+	background:conic-gradient(#0000 10%,#000000) content-box;
+	-webkit-mask:
+		repeating-conic-gradient(#0000 0deg,#000 1deg 20deg,#0000 21deg 36deg),
+		radial-gradient(farthest-side,#0000 calc(100% - 9px),#000 calc(100% - 8px));
+	-webkit-mask-composite: destination-in;
+	mask-composite: intersect;
+	animation:s4 1s infinite steps(10);
+}
+@keyframes s4 {to{transform: rotate(1turn)}}
+.coolca-product-cost-calculator .coolca-current-address{
+	font-weight: bold;
+	font-style: italic;
+}
+.coolca-product-cost-calculator a.button[name="calc_shipping"]{
+	float:none !important;
+	cursor: pointer;
+}
+
+
+.coolca-product-cost-calculator .shipping-calculator-button{
+	padding-left: 20px;
+	padding-right: 20px;
+	padding-top: 5px;
+	padding-bottom: 5px;
+	font-size: 14px;
+	text-transform: uppercase;
+	color: #162269;
+	border-color: #162269;
+	text-decoration: none;
+	background-color: #f4f4f4;
+	border-radius: 8px;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+	font-weight: bold;
+}
+
+
+.coolca-product-cost-calculator .coolca-current-address{
+	font-size: 12px;
+	font-style: italic;
+	margin-bottom: 10px;
+}
+
+.coolca-product-cost-calculator .coolca-rates{
+	list-style: none;
+	padding: 0px;
+}
+
+.coolca-product-cost-calculator .coolca-rates li{
+	font-size: 16px;
+}

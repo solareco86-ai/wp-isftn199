@@ -1,0 +1,50 @@
+.coolca-product-cost-calculator{
+	margin-bottom: 20px;
+	padding: 10px;
+	border: 1px solid grey;
+	position: relative;
+}
+.coolca-product-cost-calculator.processing:before{
+	content:'';
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	width: 100%;
+	height: 100%;
+	background-color: white;
+	opacity: 0.5;
+}
+.coolca-product-cost-calculator .custom-loader{
+	display: none;
+}
+.coolca-product-cost-calculator.processing .custom-loader{
+	display: inherit;
+}
+.coolca-product-cost-calculator .custom-loader{
+	position: absolute;
+	top: 45%;
+	left: 45%;
+	width:50px;
+	height:50px;
+	border-radius:50%;
+	padding:1px;
+	background:conic-gradient(#0000 10%,#000000) content-box;
+	-webkit-mask:
+		repeating-conic-gradient(#0000 0deg,#000 1deg 20deg,#0000 21deg 36deg),
+		radial-gradient(farthest-side,#0000 calc(100% - 9px),#000 calc(100% - 8px));
+	-webkit-mask-composite: destination-in;
+	mask-composite: intersect;
+	animation:s4 1s infinite steps(10);
+}
+@keyframes s4 {to{transform: rotate(1turn)}}
+.coolca-product-cost-calculator .coolca-current-address{
+	font-weight: bold;
+	font-style: italic;
+}
+.coolca-product-cost-calculator a.button[name="calc_shipping"]{
+	float:none !important;
+}
+
+.coolca-product-cost-calculator .shipping-calculator-button img{
+	display: none;
+}

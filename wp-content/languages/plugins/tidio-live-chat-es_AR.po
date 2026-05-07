@@ -1,0 +1,28 @@
+# Translation of Plugins - Tidio – Live Chat &amp; AI Chatbots - Stable (latest release) in Spanish (Argentina)
+# This file is distributed under the same license as the Plugins - Tidio – Live Chat &amp; AI Chatbots - Stable (latest release) package.
+msgid ""
+msgstr ""
+"PO-Revision-Date: 2022-09-15 03:10:35+0000\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=n != 1;\n"
+"X-Generator: GlotPress/4.0.1\n"
+"Language: es_AR\n"
+"Project-Id-Version: Plugins - Tidio – Live Chat &amp; AI Chatbots - Stable (latest release)\n"
+
+#. Description of the plugin
+#: tidio-elements.php
+msgid "Tidio Live Chat - live chat boosted with chatbots for your online business. Integrates with your website in less than 20 seconds."
+msgstr "Tidio Live Chat - Chat en vivo potenciado con chatbots para tu negocio online. Se integra con tu web en menos de 20 segundos."
+
+#. Plugin URI of the plugin
+#. Author URI of the plugin
+#: tidio-elements.php
+msgid "http://www.tidio.com"
+msgstr "https://www.tidio.com/"
+
+#. Plugin Name of the plugin
+#: tidio-elements.php
+msgid "Tidio Chat"
+msgstr "Tidio Chat"
