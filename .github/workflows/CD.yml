@@ -1,0 +1,26 @@
+name: CI-CD Pipeline
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+
+      - name: Verificar sintaxis PHP
+        run: |
+          find . -name "*.php" -print0 | xargs -0 -n1 php -l
+
+      - name: Finalizado
+        run: echo "CI/CD ejecutado correctamente"
