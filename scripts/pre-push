@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Pre-push hook script to run local CI tasks
+# Checks for PHP syntax errors and optionally runs PHPCS
+
+echo "DEBUG: Starting local CI checks..."
+
+# Get the range of commits being pushed
+while read local_ref local_sha remote_ref remote_sha
+do
+    echo "DEBUG: Processing Ref: $local_ref ($local_sha) -> $remote_ref ($remote_sha)"
+
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        echo "DEBUG: New branch detected."
+        # New branch, compare against main or just check all files in the current branch
+        RANGE=$(git merge-base origin/main HEAD 2>/dev/null || echo "HEAD")
+        echo "DEBUG: Range set to $RANGE..$local_sha"
+        FILES=$(git diff --name-only $RANGE..$local_sha)
+    else
+        echo "DEBUG: Existing branch. Comparing $remote_sha..$local_sha"
+        FILES=$(git diff --name-only $remote_sha..$local_sha)
+    fi
+
+    echo "DEBUG: Files to check:"
+    echo "$FILES" | sed 's/^/  - /'
+
+    # Filter for PHP files
+    PHP_FILES=$(echo "$FILES" | grep '\.php$')
+
+    if [ -n "$PHP_FILES" ]; then
+        echo "Checking PHP syntax..."
+        for file in $PHP_FILES; do
+            if [ -f "$file" ]; then
+                echo "DEBUG: Linting $file"
+                php -l "$file" > /dev/null
+                if [ $? -ne 0 ]; then
+                    echo "ERROR: Syntax error in $file"
+                    exit 1
+                fi
+            else
+                echo "DEBUG: Skipping $file (not a file, might be deleted)"
+            fi
+        done
+        echo "PHP syntax check passed."
+    else
+        echo "DEBUG: No PHP files found in this push."
+    fi
+
+    # Optional: Run PHPCS if installed
+    if command -v phpcs >/dev/null 2>&1; then
+        echo "Running PHPCS..."
+        phpcs --standard=WordPress $PHP_FILES
+        if [ $? -ne 0 ]; then
+            echo "ERROR: PHPCS check failed."
+            exit 1
+        fi
+        echo "PHPCS check passed."
+    else
+        echo "DEBUG: PHPCS not found, skipping style check."
+    fi
+
+done
+
+echo "DEBUG: Local CI checks completed successfully."
+exit 0
