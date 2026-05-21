@@ -1,65 +1,116 @@
 #!/bin/bash
 
-# Pre-push hook script to run local CI tasks
-# Checks for PHP syntax errors and optionally runs PHPCS
+# Gancho pre-push para ejecutar tareas de CI locales
+# Mejorado con marcas de tiempo, niveles de log, registro en archivo y un trap de salida
 
-echo "DEBUG: Starting local CI checks..."
+set -o pipefail
 
-# Get the range of commits being pushed
-while read local_ref local_sha remote_ref remote_sha
+## Configuración de logs
+LOG_DIR="$(dirname "$0")/logs"
+LOG_FILE="${LOG_DIR}/pre-push.log"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+
+timestamp() { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
+log() { echo "[$(timestamp)] $*" | tee -a "$LOG_FILE"; }
+log_debug() { log "DEPURACIÓN: $*"; }
+log_info() { log "INFORMACIÓN: $*"; }
+log_error() { echo "[$(timestamp)] ERROR: $*" | tee -a "$LOG_FILE" >&2; }
+
+on_exit() {
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        log_error "El script salió con código $rc"
+    else
+        log_info "El script finalizó correctamente"
+    fi
+    exit $rc
+}
+trap on_exit EXIT
+
+log_info "Iniciando comprobaciones CI locales (pid $$)"
+
+# Modo interactivo:
+# Si el script se ejecuta manualmente (sin stdin conectado), construimos una
+# línea que simula la entrada que git proporciona al hook para facilitar pruebas.
+if [ -t 0 ]; then
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+    local_ref="refs/heads/$branch"
+    local_sha=$(git rev-parse --verify HEAD 2>/dev/null || echo "")
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "")
+    if [ -n "$upstream" ]; then
+        remote_sha=$(git rev-parse "$upstream" 2>/dev/null || echo "0000000000000000000000000000000000000000")
+        remote_ref="$upstream"
+    else
+        remote_sha="0000000000000000000000000000000000000000"
+        remote_ref="no/upstream"
+    fi
+    input_line="$local_ref $local_sha $remote_ref $remote_sha"
+    log_debug "Ejecución interactiva: $input_line"
+    tmp_input=$(mktemp)
+    echo "$input_line" > "$tmp_input"
+    input_source="$tmp_input"
+else
+    input_source=/dev/stdin
+fi
+
+# Calcular el rango de commits que se están enviando y procesar cada referencia
+while read local_ref local_sha remote_ref remote_sha <&3
 do
-    echo "DEBUG: Processing Ref: $local_ref ($local_sha) -> $remote_ref ($remote_sha)"
+    log_debug "Procesando referencia: $local_ref ($local_sha) -> $remote_ref ($remote_sha)"
 
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        echo "DEBUG: New branch detected."
-        # New branch, compare against main or just check all files in the current branch
+        log_debug "Nueva rama detectada."
         RANGE=$(git merge-base origin/main HEAD 2>/dev/null || echo "HEAD")
-        echo "DEBUG: Range set to $RANGE..$local_sha"
+        log_debug "Rango establecido a $RANGE..$local_sha"
         FILES=$(git diff --name-only $RANGE..$local_sha)
     else
-        echo "DEBUG: Existing branch. Comparing $remote_sha..$local_sha"
+        log_debug "Rama existente. Comparando $remote_sha..$local_sha"
         FILES=$(git diff --name-only $remote_sha..$local_sha)
     fi
 
-    echo "DEBUG: Files to check:"
-    echo "$FILES" | sed 's/^/  - /'
+    log_info "Archivos a comprobar:"
+    echo "$FILES" | sed 's/^/  - /' | tee -a "$LOG_FILE"
 
-    # Filter for PHP files
-    PHP_FILES=$(echo "$FILES" | grep '\.php$')
+    # Filtrar archivos PHP
+    PHP_FILES=$(echo "$FILES" | grep '\.php$' || true)
 
     if [ -n "$PHP_FILES" ]; then
-        echo "Checking PHP syntax..."
+        log_info "Comprobando sintaxis PHP..."
         for file in $PHP_FILES; do
             if [ -f "$file" ]; then
-                echo "DEBUG: Linting $file"
-                php -l "$file" > /dev/null
-                if [ $? -ne 0 ]; then
-                    echo "ERROR: Syntax error in $file"
+                log_debug "Analizando $file"
+                if ! php -l "$file" >> "$LOG_FILE" 2>&1; then
+                    log_error "Error de sintaxis en $file. Ver $LOG_FILE para detalles."
                     exit 1
                 fi
             else
-                echo "DEBUG: Skipping $file (not a file, might be deleted)"
+                log_debug "Omitiendo $file (no es un archivo, puede haber sido eliminado)"
             fi
         done
-        echo "PHP syntax check passed."
+        log_info "Comprobación de sintaxis PHP superada."
     else
-        echo "DEBUG: No PHP files found in this push."
+        log_debug "No se encontraron archivos PHP en este push."
     fi
 
-    # Optional: Run PHPCS if installed
+    # Opcional: ejecutar PHPCS si está instalado
     if command -v phpcs >/dev/null 2>&1; then
-        echo "Running PHPCS..."
-        phpcs --standard=WordPress $PHP_FILES
-        if [ $? -ne 0 ]; then
-            echo "ERROR: PHPCS check failed."
+        log_info "Ejecutando PHPCS..."
+        if ! phpcs --standard=WordPress $PHP_FILES >> "$LOG_FILE" 2>&1; then
+            log_error "Comprobación PHPCS fallida. Ver $LOG_FILE para detalles."
             exit 1
         fi
-        echo "PHPCS check passed."
+        log_info "Comprobación PHPCS superada."
     else
-        echo "DEBUG: PHPCS not found, skipping style check."
+        log_debug "PHPCS no encontrado, omitiendo comprobación de estilo."
     fi
 
-done
+done 3<"$input_source"
 
-echo "DEBUG: Local CI checks completed successfully."
+# Cleanup temporary input file when used
+if [ -n "${tmp_input:-}" ] && [ -f "$tmp_input" ]; then
+    rm -f "$tmp_input" || true
+fi
+
+log_info "Comprobaciones CI locales completadas con éxito."
 exit 0
+ 
