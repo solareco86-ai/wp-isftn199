@@ -6,12 +6,116 @@ on:
       - main
 
 jobs:
-  deploy:
+  checkout:
     runs-on: ubuntu-latest
-
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v4
 
-      - name: Mostrar mensaje
-        run: echo "Workflow funcionando correctamente"
+      - name: Verificar estructura del repositorio
+        run: |
+          echo "📁 Contenido del repositorio:"
+          ls -la
+          echo ""
+          echo "📦 Verificando directorios clave:"
+          [ -d "wp-content" ] && echo "✓ wp-content encontrado" || echo "✗ wp-content NO encontrado"
+          [ -d "wp-admin" ] && echo "✓ wp-admin encontrado" || echo "✗ wp-admin NO encontrado"
+
+      - name: Verificar archivos de configuración
+        run: |
+          echo "🔧 Archivos de configuración:"
+          [ -f "wp-config.php" ] && echo "✓ wp-config.php existe" || echo "✗ wp-config.php NO existe"
+          [ -f ".github/workflows/cd.yml" ] && echo "✓ Workflow existe" || echo "✗ Workflow NO existe"
+
+  validation:
+    runs-on: ubuntu-latest
+    needs: checkout
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Validar variables del environment
+        run: |
+          echo "🔐 Validando variables y secretos:"
+          echo "   DEPLOY_USER: ${DEPLOY_USER:-(no configurado)}"
+          echo "   DEPLOY_HOST: ${DEPLOY_HOST:-(no configurado)}"
+          echo "   DEPLOY_PORT: ${DEPLOY_PORT:-(no configurado)}"
+          echo "   DEPLOY_PASSWORD: ${DEPLOY_PASSWORD:-(no configurado)}"
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+
+      - name: Verificar conectividad SSH
+        run: |
+          echo "🔗 Comprobando conectividad SSH:"
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" > /dev/null 2>&1 && echo "✓ Host accesible" || echo "✗ Host NO accesible"
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+        continue-on-error: true
+
+  deploy:
+    runs-on: ubuntu-latest
+    environment: hosting
+    needs: [checkout, validation]
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Mostrar información de despliegue
+        run: |
+          echo "🚀 Iniciando despliegue..."
+          echo "   Servidor: $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT"
+          echo "   Destino: /var/www/html/instituto/"
+          echo "   Archivos a transferir: $(find . -type f | wc -l)"
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+
+      - name: Desplegar a servidor remoto
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          echo "📤 Transferiendo archivos vía SCP..."
+          expect << EOF
+          spawn scp -P $DEPLOY_PORT -r ./* $DEPLOY_USER@$DEPLOY_HOST:/var/www/html/instituto/
+          expect "password:"
+          send "$DEPLOY_PASSWORD\r"
+          expect eof
+          EOF
+          
+          echo "📋 Ejecutando script de despliegue..."
+          expect << EOF
+          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST "cd /var/www/html/instituto && bash deploy.sh"
+          expect "password:"
+          send "$DEPLOY_PASSWORD\r"
+          expect eof
+          EOF
+          
+          echo "✅ Despliegue completado"
+
+      - name: Verificar despliegue
+        run: |
+          echo "🔍 Verificando estado del servidor..."
+          expect << EOF
+          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST "ls -la /var/www/html/instituto/ | head -20"
+          expect "password:"
+          send "$DEPLOY_PASSWORD\r"
+          expect eof
+          EOF
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        continue-on-error: true
+        
