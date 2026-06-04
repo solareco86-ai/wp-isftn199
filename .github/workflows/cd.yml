@@ -164,6 +164,9 @@ jobs:
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
           echo "📤 Iniciando transferencia de archivos..."
+          echo "📂 Directorio actual: $(pwd)"
+          echo "📋 Archivos a copiar:"
+          ls -la | head -15
           
           cat > /tmp/scp_deploy.expect << 'EOF'
           #!/usr/bin/expect -f
@@ -173,15 +176,15 @@ jobs:
           set port [lindex $argv 2]
           set pass [lindex $argv 3]
           
-          puts "Transfiriendo archivos a $user@$host:$port"
-          spawn scp -o StrictHostKeyChecking=no -P $port -r ./* $user@$host:/var/www/html/instituto/
+          puts "Transfiriendo directorio completo a $user@$host:$port"
+          spawn scp -o StrictHostKeyChecking=no -P $port -r . $user@$host:/var/www/html/instituto/
           expect {
             "password:" { send "$pass\r"; exp_continue }
             "Connection refused" { puts "❌ ERROR: Conexión rechazada"; exit 1 }
-            "No such file" { puts "❌ ERROR: Ruta no válida"; exit 1 }
+            "No such file" { puts "❌ ERROR: Ruta no válida en destino"; exit 1 }
             "100%" { puts "✓ Transferencia completada" }
             timeout { puts "❌ ERROR: Timeout en transferencia"; exit 1 }
-            eof { }
+            eof { puts "✓ Transferencia finalizada" }
           }
           EOF
           
