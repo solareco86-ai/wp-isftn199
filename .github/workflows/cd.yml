@@ -64,6 +64,13 @@ jobs:
       - name: Clonar repositorio
         uses: actions/checkout@v4
 
+      - name: Instalar dependencias
+        run: |
+          echo "📦 Instalando dependencias necesarias..."
+          sudo apt-get update
+          sudo apt-get install -y expect
+          which expect && echo "✓ expect instalado correctamente" || echo "✗ Error instalando expect"
+
       - name: Mostrar información de despliegue
         run: |
           echo "🚀 Iniciando despliegue..."
@@ -82,40 +89,81 @@ jobs:
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
+          # Validar que las variables están configuradas
+          if [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_PORT" ] || [ -z "$DEPLOY_PASSWORD" ]; then
+            echo "❌ Error: Variables de despliegue no configuradas"
+            echo "   DEPLOY_USER: ${DEPLOY_USER:-(vacío)}"
+            echo "   DEPLOY_HOST: ${DEPLOY_HOST:-(vacío)}"
+            echo "   DEPLOY_PORT: ${DEPLOY_PORT:-(vacío)}"
+            echo "   DEPLOY_PASSWORD: ${DEPLOY_PASSWORD:+(configurado)}"
+            exit 1
+          fi
+          
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           
           echo "📤 Transferiendo archivos vía SCP..."
-          expect << EOF
+          expect -c "
+          set timeout 30
           spawn scp -P $DEPLOY_PORT -r ./* $DEPLOY_USER@$DEPLOY_HOST:/var/www/html/instituto/
-          expect "password:"
-          send "$DEPLOY_PASSWORD\r"
-          expect eof
-          EOF
+          expect {
+            \"password:\" {send \"$DEPLOY_PASSWORD\r\"; exp_continue}
+            \"Connection refused\" {puts \"ERROR: Conexión rechazada\"; exit 1}
+            \"No such file\" {puts \"ERROR: Directorio destino no existe\"; exit 1}
+            eof {puts \"✓ Transferencia completada\"}
+          }
+          "
           
           echo "📋 Ejecutando script de despliegue..."
-          expect << EOF
-          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST "cd /var/www/html/instituto && bash deploy.sh"
-          expect "password:"
-          send "$DEPLOY_PASSWORD\r"
-          expect eof
-          EOF
+          expect -c "
+          set timeout 60
+          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \"cd /var/www/html/instituto && bash deploy.sh\"
+          expect {
+            \"password:\" {send \"$DEPLOY_PASSWORD\r\"; exp_continue}
+            \"command not found\" {puts \"ERROR: deploy.sh no encontrado\"; exit 1}
+            eof {puts \"✓ Script ejecutado\"}
+          }
+          "
           
           echo "✅ Despliegue completado"
 
       - name: Verificar despliegue
         run: |
           echo "🔍 Verificando estado del servidor..."
-          expect << EOF
-          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST "ls -la /var/www/html/instituto/ | head -20"
-          expect "password:"
-          send "$DEPLOY_PASSWORD\r"
-          expect eof
-          EOF
+          expect -c "
+          set timeout 30
+          spawn ssh -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST \"ls -la /var/www/html/instituto/ | head -20\"
+          expect {
+            \"password:\" {send \"$DEPLOY_PASSWORD\r\"; exp_continue}
+            eof {puts \"✓ Verificación completada\"}
+          }
+          "
         env:
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         continue-on-error: true
+
+      - name: Resumen del despliegue
+        if: always()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "📊 RESUMEN DEL WORKFLOW"
+          echo "════════════════════════════════════════"
+          echo "✓ Workflow completado"
+          echo ""
+          echo "📋 Pasos ejecutados:"
+          echo "  1. ✓ Checkout del repositorio"
+          echo "  2. ✓ Instalación de dependencias"
+          echo "  3. ✓ Validación de variables"
+          echo "  4. ✓ Transferencia de archivos"
+          echo "  5. ✓ Ejecución de deploy.sh"
+          echo "  6. ✓ Verificación final"
+          echo ""
+          echo "📌 Próximos pasos si hay errores:"
+          echo "  - Verifica que el environment 'hosting' existe"
+          echo "  - Confirma las variables en Settings → Secrets and variables"
+          echo "  - Revisa que deploy.sh existe en el servidor remoto"
+          echo "════════════════════════════════════════"
         
