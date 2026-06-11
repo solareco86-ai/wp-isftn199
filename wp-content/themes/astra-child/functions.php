@@ -104,3 +104,27 @@ function instituto_contact_form_shortcode() {
     return ob_get_clean();
 }
 add_shortcode( 'instituto_contact_form', 'instituto_contact_form_shortcode' );
+
+/**
+ * Integración de Chatwoot
+ * Carga el widget de chat en el footer del sitio
+ */
+add_action('wp_footer', function () {
+    ?>
+    <script>
+      (function(d,t) {
+        var BASE_URL="https://chatwoot.isftn199.com.ar";
+        var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
+        g.src=BASE_URL+"/packs/js/sdk.js";
+        g.async = true;
+        s.parentNode.insertBefore(g,s);
+        g.onload=function(){
+          window.chatwootSDK.run({
+            websiteToken: 'BMaegsSLyw06ujpGMErvngJi',
+            baseUrl: BASE_URL
+          })
+        }
+      })(document,"script");
+    </script>
+    <?php
+});
