@@ -113,17 +113,34 @@ add_action('wp_footer', function () {
     ?>
     <script>
       (function(d,t) {
+        console.log('[Chatwoot] Iniciando integración...');
         var BASE_URL="https://chatwoot.isftn199.com.ar";
         var g=d.createElement(t),s=d.getElementsByTagName(t)[0];
         g.src=BASE_URL+"/packs/js/sdk.js";
         g.async = true;
-        s.parentNode.insertBefore(g,s);
+        console.log('[Chatwoot] Cargando script desde:', g.src);
+        
         g.onload=function(){
-          window.chatwootSDK.run({
-            websiteToken: 'BMaegsSLyw06ujpGMErvngJi',
-            baseUrl: BASE_URL
-          })
-        }
+          console.log('[Chatwoot] Script cargado correctamente');
+          console.log('[Chatwoot] window.chatwootSDK disponible:', !!window.chatwootSDK);
+          if(window.chatwootSDK){
+            console.log('[Chatwoot] Inicializando SDK con websiteToken: BMaegsSLyw06ujpGMErvngJi');
+            window.chatwootSDK.run({
+              websiteToken: 'BMaegsSLyw06ujpGMErvngJi',
+              baseUrl: BASE_URL
+            });
+            console.log('[Chatwoot] SDK inicializado exitosamente');
+          } else {
+            console.error('[Chatwoot] window.chatwootSDK no está disponible');
+          }
+        };
+        
+        g.onerror=function(){
+          console.error('[Chatwoot] Error al cargar el script desde:', g.src);
+        };
+        
+        s.parentNode.insertBefore(g,s);
+        console.log('[Chatwoot] Script insertado en el DOM');
       })(document,"script");
     </script>
     <?php
