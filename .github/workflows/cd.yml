@@ -218,7 +218,6 @@ jobs:
           
           chmod +x /tmp/run_deploy.expect
           /tmp/run_deploy.expect "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD"
-        continue-on-error: true
 
       - name: "7️⃣ Verificar archivos desplegados"
         env:
