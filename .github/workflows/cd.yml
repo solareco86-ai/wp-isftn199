@@ -39,57 +39,42 @@ jobs:
           echo "🔍 DIAGNÓSTICO DE VARIABLES"
           echo "════════════════════════════════════════"
           echo ""
-          echo "📋 Variables disponibles en este job:"
-          echo "   Contexto vars:"
-          echo "     - DEPLOY_USER: ${{ vars.DEPLOY_USER }}"
-          echo "     - DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}"
-          echo "     - DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}"
-          echo ""
-          echo "📋 Secretos disponibles:"
-          echo "     - DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD != '' && '(configurado)' || '(NO configurado)' }}"
+          echo "📋 Variables disponibles:"
+          echo "   Este job (validation) no tiene acceso al ambiente 'hosting'"
+          echo "   Las variables se validan en el job 'validate-deployment-vars'"
           echo ""
           echo "📋 Información del workflow:"
           echo "     - Rama: ${{ github.ref }}"
-          echo "     - Job: ${{ github.job }}"
+          echo "     - Job: validation (diagnóstico)"
           echo "     - Repositorio: ${{ github.repository }}"
           echo ""
-          echo "💡 NOTA: Las variables deben estar configuradas en:"
+          echo "💡 PRÓXIMO PASO:"
+          echo "   Configura las variables en:"
           echo "   Settings > Secrets and variables > Actions > Variables"
           echo ""
+          echo "   Variables requeridas:"
+          echo "     - DEPLOY_USER"
+          echo "     - DEPLOY_HOST"
+          echo "     - DEPLOY_PORT"
+          echo ""
+          echo "   Secretos requeridos:"
+          echo "     - DEPLOY_PASSWORD"
+          echo ""
 
-      - name: "2️⃣ Verificar conectividad SSH (con keyscan)"
+      - name: "2️⃣ Información sobre validación"
         run: |
-          echo "🔗 Validación de conectividad SSH"
+          echo "✅ Validación de conectividad"
           echo "════════════════════════════════════════"
           echo ""
-          echo "DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}"
-          echo "DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}"
+          echo "📋 Este step:"
+          echo "   - Se ejecuta en el job 'validation' (sin ambiente)"
+          echo "   - No puede acceder a las variables del ambiente 'hosting'"
           echo ""
-          
-          if [ -z "${{ vars.DEPLOY_HOST }}" ] || [ -z "${{ vars.DEPLOY_PORT }}" ]; then
-            echo "⚠️  ADVERTENCIA: Variables DEPLOY_HOST o DEPLOY_PORT no configuradas"
-            echo "   No se puede validar conectividad"
-            exit 0
-          fi
-          
-          echo "🔄 Escaneando puerto SSH..."
-          ssh-keyscan -p "${{ vars.DEPLOY_PORT }}" "${{ vars.DEPLOY_HOST }}" 2>&1 | tee /tmp/keyscan.log
-          
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo ""
-            echo "✓ Host accesible en puerto ${{ vars.DEPLOY_PORT }}"
-          else
-            echo ""
-            echo "✗ No se pudo conectar al host"
-            echo ""
-            echo "📋 Diagnóstico:"
-            if [ "${{ vars.DEPLOY_PORT }}" = "21" ]; then
-              echo "   ⚠️  Puerto 21 detectado (FTP, no SSH)"
-              echo "   SSH normalmente usa puerto 22"
-            fi
-            cat /tmp/keyscan.log
-          fi
-        continue-on-error: true
+          echo "📋 Validación de conectividad SSH:"
+          echo "   - Se realiza en el job 'validate-deployment-vars'"
+          echo "   - Requiere que las variables estén configuradas"
+          echo "   - Incluye diagnóstico detallado si fallan"
+          echo ""
 
   validate-deployment-vars:
     runs-on: ubuntu-latest
@@ -198,6 +183,45 @@ jobs:
           echo "🔑 Secretos del repositorio:"
           echo "   Settings > Secrets and variables > Actions > Secrets"
           echo ""
+
+      - name: "3️⃣ Validar conectividad SSH"
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+        run: |
+          echo "🔗 Validando conectividad SSH"
+          echo "════════════════════════════════════════"
+          echo ""
+          
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_PORT" ]; then
+            echo "⚠️  ADVERTENCIA: DEPLOY_HOST o DEPLOY_PORT no configuradas"
+            echo "   No se puede validar conectividad"
+            exit 0
+          fi
+          
+          echo "   Host: $DEPLOY_HOST"
+          echo "   Puerto: $DEPLOY_PORT"
+          echo ""
+          
+          # Validación del puerto
+          if [ "$DEPLOY_PORT" = "21" ]; then
+            echo "   ⚠️  ADVERTENCIA: Puerto 21 detectado"
+            echo "   SSH normalmente usa puerto 22"
+            echo ""
+          fi
+          
+          echo "🔄 Escaneando puerto SSH..."
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" 2>&1 | tee /tmp/keyscan.log
+          
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo ""
+            echo "✓ Host accesible en puerto $DEPLOY_PORT"
+          else
+            echo ""
+            echo "✗ No se pudo conectar al host"
+            echo "   Verifica: host, puerto y firewall"
+          fi
+        continue-on-error: true
 
   prepare:
     runs-on: ubuntu-latest
