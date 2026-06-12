@@ -34,51 +34,175 @@ jobs:
       - name: Clonar repositorio
         uses: actions/checkout@v4
 
-      - name: Validar variables del environment
+      - name: "1️⃣ Diagnóstico de variables (debug)"
         run: |
-          echo "🔐 Validando variables y secretos:"
-          echo "   DEPLOY_USER: ${DEPLOY_USER:-(no configurado)}"
-          echo "   DEPLOY_HOST: ${DEPLOY_HOST:-(no configurado)}"
-          echo "   DEPLOY_PORT: ${DEPLOY_PORT:-(no configurado)}"
-          echo "   DEPLOY_PASSWORD: ${DEPLOY_PASSWORD:-(no configurado)}"
+          echo "🔍 DIAGNÓSTICO DE VARIABLES"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📋 Variables disponibles en este job:"
+          echo "   Contexto vars:"
+          echo "     - DEPLOY_USER: ${{ vars.DEPLOY_USER }}"
+          echo "     - DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}"
+          echo "     - DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}"
+          echo ""
+          echo "📋 Secretos disponibles:"
+          echo "     - DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD != '' && '(configurado)' || '(NO configurado)' }}"
+          echo ""
+          echo "📋 Información del workflow:"
+          echo "     - Rama: ${{ github.ref }}"
+          echo "     - Job: ${{ github.job }}"
+          echo "     - Repositorio: ${{ github.repository }}"
+          echo ""
+          echo "💡 NOTA: Las variables deben estar configuradas en:"
+          echo "   Settings > Secrets and variables > Actions > Variables"
+          echo ""
+
+      - name: "2️⃣ Verificar conectividad SSH (con keyscan)"
+        run: |
+          echo "🔗 Validación de conectividad SSH"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}"
+          echo "DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}"
+          echo ""
           
-          if [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_PORT" ] || [ -z "$DEPLOY_PASSWORD" ]; then
-            echo "❌ ERROR: Faltan variables críticas"
-            exit 1
+          if [ -z "${{ vars.DEPLOY_HOST }}" ] || [ -z "${{ vars.DEPLOY_PORT }}" ]; then
+            echo "⚠️  ADVERTENCIA: Variables DEPLOY_HOST o DEPLOY_PORT no configuradas"
+            echo "   No se puede validar conectividad"
+            exit 0
           fi
+          
+          echo "🔄 Escaneando puerto SSH..."
+          ssh-keyscan -p "${{ vars.DEPLOY_PORT }}" "${{ vars.DEPLOY_HOST }}" 2>&1 | tee /tmp/keyscan.log
+          
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo ""
+            echo "✓ Host accesible en puerto ${{ vars.DEPLOY_PORT }}"
+          else
+            echo ""
+            echo "✗ No se pudo conectar al host"
+            echo ""
+            echo "📋 Diagnóstico:"
+            if [ "${{ vars.DEPLOY_PORT }}" = "21" ]; then
+              echo "   ⚠️  Puerto 21 detectado (FTP, no SSH)"
+              echo "   SSH normalmente usa puerto 22"
+            fi
+            cat /tmp/keyscan.log
+          fi
+        continue-on-error: true
+
+  validate-deployment-vars:
+    runs-on: ubuntu-latest
+    needs: checkout
+    environment: hosting
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: "1️⃣ Validar variables de despliegue (con ambiente hosting)"
         env:
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-
-      - name: Verificar conectividad SSH
         run: |
-          echo "🔗 Comprobando conectividad SSH..."
-          echo "   Intentando: $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT"
+          echo "🔐 VALIDACIÓN DE VARIABLES DE DESPLIEGUE"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📋 Contexto:"
+          echo "   Job: validate-deployment-vars"
+          echo "   Ambiente: hosting"
+          echo "   Rama: ${{ github.ref }}"
+          echo ""
+          echo "🔍 Verificando variables..."
+          echo ""
           
-          # Validar que el puerto sea el correcto (no FTP)
-          if [ "$DEPLOY_PORT" = "21" ]; then
-            echo "⚠️ ADVERTENCIA: Puerto 21 detectado. SSH normalmente usa 22."
-          fi
+          ERRORS=0
           
-          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" 2>&1 | tee /tmp/keyscan.log
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo "✓ Host accesible en puerto $DEPLOY_PORT"
+          if [ -n "$DEPLOY_USER" ]; then
+            echo "✓ DEPLOY_USER: $DEPLOY_USER"
           else
-            echo "✗ No se pudo conectar al host"
-            cat /tmp/keyscan.log
+            echo "✗ DEPLOY_USER: (vacío o no configurado)"
+            ERRORS=$((ERRORS + 1))
           fi
-        env:
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-        continue-on-error: true
+          
+          if [ -n "$DEPLOY_HOST" ]; then
+            echo "✓ DEPLOY_HOST: $DEPLOY_HOST"
+          else
+            echo "✗ DEPLOY_HOST: (vacío o no configurado)"
+            ERRORS=$((ERRORS + 1))
+          fi
+          
+          if [ -n "$DEPLOY_PORT" ]; then
+            echo "✓ DEPLOY_PORT: $DEPLOY_PORT"
+            
+            # Validaciones adicionales
+            if [ "$DEPLOY_PORT" = "21" ]; then
+              echo "   ⚠️  ADVERTENCIA: Puerto 21 (FTP) - SSH normalmente usa 22"
+            elif [ "$DEPLOY_PORT" -lt 1 ] || [ "$DEPLOY_PORT" -gt 65535 ]; then
+              echo "   ✗ ERROR: Puerto fuera de rango válido (1-65535)"
+              ERRORS=$((ERRORS + 1))
+            fi
+          else
+            echo "✗ DEPLOY_PORT: (vacío o no configurado)"
+            ERRORS=$((ERRORS + 1))
+          fi
+          
+          if [ -n "$DEPLOY_PASSWORD" ]; then
+            echo "✓ DEPLOY_PASSWORD: (configurado, longitud: ${#DEPLOY_PASSWORD} caracteres)"
+          else
+            echo "✗ DEPLOY_PASSWORD: (vacío o no configurado)"
+            ERRORS=$((ERRORS + 1))
+          fi
+          
+          echo ""
+          echo "════════════════════════════════════════"
+          
+          if [ $ERRORS -eq 0 ]; then
+            echo "✅ Todas las variables configuradas correctamente"
+            exit 0
+          else
+            echo "❌ ERROR: $ERRORS variable(s) faltante(s) o inválida(s)"
+            echo ""
+            echo "💡 Solución:"
+            echo "   1. Ir a: Settings > Secrets and variables > Actions"
+            echo "   2. Crear variables (Variables tab):"
+            echo "      - DEPLOY_USER: (nombre de usuario)"
+            echo "      - DEPLOY_HOST: (dominio o IP)"
+            echo "      - DEPLOY_PORT: (puerto SSH, normalmente 22)"
+            echo "   3. Crear secret (Secrets tab):"
+            echo "      - DEPLOY_PASSWORD: (contraseña)"
+            echo "   4. Asegurar que el environment 'hosting' tiene acceso"
+            echo ""
+            exit 1
+          fi
+
+      - name: "2️⃣ Diagnóstico adicional"
+        if: failure()
+        run: |
+          echo "🔍 INFORMACIÓN DIAGNÓSTICA"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📋 Información del repositorio:"
+          echo "   Repositorio: ${{ github.repository }}"
+          echo "   Rama: ${{ github.ref }}"
+          echo "   Commit: ${{ github.sha }}"
+          echo ""
+          echo "🏠 Ambientes configurados:"
+          echo "   Este workflow requiere el ambiente 'hosting'"
+          echo "   Verifica que exista en Settings > Environments"
+          echo ""
+          echo "🔐 Variables del repositorio:"
+          echo "   Settings > Secrets and variables > Actions > Variables"
+          echo ""
+          echo "🔑 Secretos del repositorio:"
+          echo "   Settings > Secrets and variables > Actions > Secrets"
+          echo ""
 
   prepare:
     runs-on: ubuntu-latest
     environment: hosting
-    needs: [checkout, validation]
+    needs: [checkout, validation, validate-deployment-vars]
     steps:
       - name: Clonar repositorio
         uses: actions/checkout@v4
