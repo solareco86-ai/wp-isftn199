@@ -1,7 +1,9 @@
 #!/bin/bash
 
 ##########################################################
-# Ejecutar deploy.sh en el servidor remoto
+# Verificar y ejecutar deploy.sh en el servidor remoto (FTP)
+# Nota: Con FTP no se pueden ejecutar comandos remotamente
+# El deploy.sh debe ejecutarse mediante cron, webhook, o manualmente en el servidor
 # Uso: ./scripts/run-deploy.sh <user> <host> <port> <password> <deploy_dir>
 ##########################################################
 
@@ -11,73 +13,107 @@ DEPLOY_USER="${1:?Falta: DEPLOY_USER}"
 DEPLOY_HOST="${2:?Falta: DEPLOY_HOST}"
 DEPLOY_PORT="${3:?Falta: DEPLOY_PORT}"
 DEPLOY_PASSWORD="${4:?Falta: DEPLOY_PASSWORD}"
-DEPLOY_DIR="${5:/var/www/html/instituto}"
+DEPLOY_DIR="${5:-/var/www/html/instituto}"
 
-echo "⚙️  Ejecutando script de despliegue en servidor remoto..."
+echo "⚙️  Verificando script de despliegue en servidor remoto (FTP)..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "   Usuario: $DEPLOY_USER"
-echo "   Host: $DEPLOY_HOST:$DEPLOY_PORT"
+echo "   Host: $DEPLOY_HOST:$DEPLOY_PORT (FTP)"
 echo "   Directorio: $DEPLOY_DIR"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
 
-# Crear script expect para ejecutar deploy.sh
-cat > /tmp/run_deploy.expect << 'EXPECT_EOF'
-#!/usr/bin/expect -f
-set timeout 300
-set user [lindex $argv 0]
-set host [lindex $argv 1]
-set port [lindex $argv 2]
-set pass [lindex $argv 3]
-set deploy_dir [lindex $argv 4]
+# Verificar que deploy.sh existe vía FTP
+echo "🔍 Buscando deploy.sh en el servidor remoto..."
+echo ""
 
-puts "🚀 Ejecutando deploy remoto..."
-puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+DEPLOY_EXISTS=$(lftp -e "
+  set ftp:ssl-allow no
+  set net:timeout 30
+  connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT
+  cd $DEPLOY_DIR
+  if test -f deploy.sh; then
+    echo 'YES'
+  else
+    echo 'NO'
+  fi
+  quit
+" 2>/dev/null | tail -1)
 
-# Comando remoto: verificar deploy.sh, mostrarlo, y ejecutarlo
-set remote_cmd "cd $deploy_dir && \
-  if \[ -f deploy.sh \]; then \
-    echo '✓ Script deploy.sh encontrado'; \
-    echo '📋 Contenido:'; \
-    head -20 deploy.sh; \
-    echo '...'; \
-    echo ''; \
-    echo '🔄 Ejecutando...'; \
-    bash -x deploy.sh 2>&1; \
-  else \
-    echo '❌ deploy.sh NO encontrado en $deploy_dir'; \
-    echo '📂 Contenido del directorio:'; \
-    ls -lah; \
-    exit 1; \
-  fi"
-
-spawn ssh -v -o StrictHostKeyChecking=no -p $port $user@$host $remote_cmd
-
-expect {
-    "password:" {
-        puts "✓ Autenticando..."
-        send "$pass\r"
-        exp_continue
-    }
-    "deploy.sh NO encontrado" {
-        puts "❌ ERROR: Script deploy.sh no existe"
-        puts "   - Verifica que el archivo fue transferido correctamente"
-        exit 1
-    }
-    "Permission denied" {
-        puts "❌ ERROR: Contraseña incorrecta o permiso denegado"
-        exit 1
-    }
-    "Connection refused" {
-        puts "❌ ERROR: Conexión rechazada"
-        exit 1
-    }
-    timeout {
-        puts "❌ ERROR: Timeout en ejecución (>300s)"
-        exit 1
-    }
-    eof {
-        puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        puts "✅ Script de despliegue ejecutado"
+if [ "$DEPLOY_EXISTS" = "YES" ]; then
+    echo "✓ Script deploy.sh encontrado en el servidor"
+    echo ""
+    echo "📋 Información del archivo:"
+    
+    lftp -e "
+      set ftp:ssl-allow no
+      set net:timeout 30
+      connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT
+      cd $DEPLOY_DIR
+      ls -lh deploy.sh
+      quit
+    " 2>/dev/null || true
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "⚠️  IMPORTANTE - PRÓXIMOS PASOS:"
+    echo ""
+    echo "1️⃣  El script 'deploy.sh' está en el servidor pero NO SE EJECUTÓ"
+    echo "    (FTP no permite ejecutar comandos remotamente)"
+    echo ""
+    echo "2️⃣  Debes ejecutar deploy.sh usando UNA de estas opciones:"
+    echo ""
+    echo "   📌 OPCIÓN A - Cron Job (automático):"
+    echo "      Accede al panel de control (cPanel/Plesk)"
+    echo "      Añade una tarea cron que ejecute:"
+    echo "      bash /var/www/html/instituto/deploy.sh"
+    echo ""
+    echo "   📌 OPCIÓN B - Webhook (GitHub Actions trigger):"
+    echo "      Configura un webhook que ejecute deploy.sh"
+    echo "      Cuando se complete la transferencia FTP"
+    echo ""
+    echo "   📌 OPCIÓN C - Manual:"
+    echo "      Conecta vía SSH o panel de control"
+    echo "      Ejecuta: bash /var/www/html/instituto/deploy.sh"
+    echo ""
+    echo "3️⃣  Estado de transferencia:"
+    echo "    ✓ Archivos transferidos vía FTP"
+    echo "    ✓ Script deploy.sh presente"
+    echo "    ⏳ Esperando ejecución manual del deploy"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    exit 0
+else
+    echo "❌ ERROR: Script deploy.sh NO encontrado"
+    echo ""
+    echo "📂 Contenido del directorio remoto:"
+    echo ""
+    
+    lftp -e "
+      set ftp:ssl-allow no
+      set net:timeout 30
+      connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT
+      cd $DEPLOY_DIR
+      ls -lah | head -20
+      quit
+    " 2>/dev/null || true
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "🔧 SOLUCIÓN:"
+    echo ""
+    echo "1. Verifica que deploy.sh fue transferido correctamente"
+    echo "   - Busca el archivo en el directorio: $DEPLOY_DIR"
+    echo ""
+    echo "2. Revisa los logs de transferencia anteriores"
+    echo ""
+    echo "3. Alternativas:"
+    echo "   - Crea deploy.sh en el servidor manualmente"
+    echo "   - O incluye el script en tu repositorio"
+    echo ""
+    exit 1
         puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     }
 }

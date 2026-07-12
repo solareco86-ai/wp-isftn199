@@ -122,8 +122,9 @@ jobs:
             echo "✓ DEPLOY_PORT: $DEPLOY_PORT"
             
             # Validaciones adicionales
-            if [ "$DEPLOY_PORT" = "21" ]; then
-              echo "   ⚠️  ADVERTENCIA: Puerto 21 (FTP) - SSH normalmente usa 22"
+            if [ "$DEPLOY_PORT" != "21" ]; then
+              echo "   ✗ ERROR: Se requiere Puerto 21 (FTP)"
+              ERRORS=$((ERRORS + 1))
             elif [ "$DEPLOY_PORT" -lt 1 ] || [ "$DEPLOY_PORT" -gt 65535 ]; then
               echo "   ✗ ERROR: Puerto fuera de rango válido (1-65535)"
               ERRORS=$((ERRORS + 1))
@@ -152,11 +153,11 @@ jobs:
             echo "💡 Solución:"
             echo "   1. Ir a: Settings > Secrets and variables > Actions"
             echo "   2. Crear variables (Variables tab):"
-            echo "      - DEPLOY_USER: (nombre de usuario)"
+            echo "      - DEPLOY_USER: (nombre de usuario FTP)"
             echo "      - DEPLOY_HOST: (dominio o IP)"
-            echo "      - DEPLOY_PORT: (puerto SSH, normalmente 22)"
+            echo "      - DEPLOY_PORT: 21 (puerto FTP)"
             echo "   3. Crear secret (Secrets tab):"
-            echo "      - DEPLOY_PASSWORD: (contraseña)"
+            echo "      - DEPLOY_PASSWORD: (contraseña FTP)"
             echo "   4. Asegurar que el environment 'hosting' tiene acceso"
             echo ""
             exit 1
@@ -184,44 +185,62 @@ jobs:
           echo "   Settings > Secrets and variables > Actions > Secrets"
           echo ""
 
-      - name: "3️⃣ Validar conectividad SSH"
+      - name: "3️⃣ Validar conectividad FTP (Puerto 21)"
         env:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
         run: |
-          echo "🔗 Validando conectividad SSH"
+          echo "🔗 Validando conectividad FTP"
           echo "════════════════════════════════════════"
           echo ""
           
-          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_PORT" ]; then
-            echo "⚠️  ADVERTENCIA: DEPLOY_HOST o DEPLOY_PORT no configuradas"
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_PORT" ] || [ -z "$DEPLOY_USER" ]; then
+            echo "⚠️  ADVERTENCIA: Variables FTP incompletas"
             echo "   No se puede validar conectividad"
             exit 0
           fi
           
           echo "   Host: $DEPLOY_HOST"
           echo "   Puerto: $DEPLOY_PORT"
+          echo "   Usuario: $DEPLOY_USER"
           echo ""
           
-          # Validación del puerto
-          if [ "$DEPLOY_PORT" = "21" ]; then
-            echo "   ⚠️  ADVERTENCIA: Puerto 21 detectado"
-            echo "   SSH normalmente usa puerto 22"
+          # Validar que se usa puerto 21 (FTP)
+          if [ "$DEPLOY_PORT" != "21" ]; then
+            echo "❌ ERROR: Puerto inválido para FTP"
+            echo "   Se requiere: Puerto 21 (FTP)"
+            echo "   Se detectó: Puerto $DEPLOY_PORT"
             echo ""
+            exit 1
           fi
           
-          echo "🔄 Escaneando puerto SSH..."
-          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" 2>&1 | tee /tmp/keyscan.log
+          # Instalar lftp si no está disponible
+          if ! command -v lftp &> /dev/null; then
+            echo "📦 Instalando lftp..."
+            sudo apt-get update &> /dev/null
+            sudo apt-get install -y lftp &> /dev/null
+          fi
           
-          if [ ${PIPESTATUS[0]} -eq 0 ]; then
-            echo ""
-            echo "✓ Host accesible en puerto $DEPLOY_PORT"
+          echo "🔄 Escaneando puerto FTP (21)..."
+          
+          # Intentar conexión FTP
+          if lftp -e "set ftp:ssl-allow no; set net:timeout 15; connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT; quit" 2>&1 | grep -q "total"; then
+            echo "✓ Conexión FTP exitosa"
+            echo "   Host accesible en puerto 21"
           else
-            echo ""
-            echo "✗ No se pudo conectar al host"
-            echo "   Verifica: host, puerto y firewall"
+            # Intentar con telnet como fallback
+            if timeout 5 bash -c "</dev/tcp/$DEPLOY_HOST/21" 2>/dev/null; then
+              echo "✓ Puerto 21 (FTP) está abierto"
+              echo "   Nota: No se pudo autenticar, verifica credenciales"
+            else
+              echo "❌ No se pudo conectar a $DEPLOY_HOST:21"
+              echo "   Verifica: host, puerto y firewall"
+              exit 1
+            fi
           fi
-        continue-on-error: true
+        continue-on-error: false
 
   prepare:
     runs-on: ubuntu-latest
@@ -235,7 +254,7 @@ jobs:
         run: |
           echo "📦 Instalando dependencias necesarias..."
           sudo apt-get update
-          sudo apt-get install -y expect sshpass
+          sudo apt-get install -y lftp
 
       - name: "2️⃣ Validar variables de despliegue"
         env:
@@ -258,13 +277,26 @@ jobs:
           echo "   Total de directorios: $(find . -type d | wc -l)"
           echo "   Tamaño total: $(du -sh . | cut -f1)"
 
-      - name: "4️⃣ Probar conectividad SSH"
+      - name: "4️⃣ Verificar conectividad FTP"
         env:
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-        run: bash scripts/ssh-test.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD"
+        run: |
+          echo "🔗 Prueba de conectividad FTP"
+          echo "════════════════════════════════════════"
+          echo ""
+          
+          lftp -e "set ftp:ssl-allow no; set net:timeout 10; connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT; ls -la; quit" 2>&1 | head -30
+          
+          if [ ${PIPESTATUS[0]} -eq 0 ]; then
+            echo ""
+            echo "✓ Conectividad FTP verificada exitosamente"
+          else
+            echo ""
+            echo "⚠️  Advertencia en conectividad FTP"
+          fi
 
       - name: "✅ Preparación completada"
         run: |
@@ -275,12 +307,12 @@ jobs:
           echo "✓ Credenciales validadas"
           echo "✓ Archivos locales verificados"
           echo "✓ Dependencias instaladas"
-          echo "✓ Conectividad SSH verificada"
+          echo "✓ Conectividad FTP verificada"
           echo ""
-          echo "Próximo: Transfer & Deploy"
+          echo "Próximo: Transfer & Deploy (vía FTP Puerto 21)"
           echo "════════════════════════════════════════"
 
-  transfer-deploy:
+  transfer:
     runs-on: ubuntu-latest
     environment: hosting
     needs: [prepare]
@@ -292,15 +324,133 @@ jobs:
         run: |
           echo "📦 Instalando dependencias..."
           sudo apt-get update
-          sudo apt-get install -y expect sshpass
+          sudo apt-get install -y lftp
 
-      - name: "2️⃣ Transferir archivos vía SCP"
+      - name: "2️⃣ Pre-validación de variables"
         env:
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-        run: bash scripts/transfer-files.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "." "/var/www/html/instituto"
+        run: |
+          echo "🔍 PRE-VALIDACIÓN DE TRANSFERENCIA FTP"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📋 Parámetros:"
+          echo "   Usuario: $DEPLOY_USER"
+          echo "   Host: $DEPLOY_HOST"
+          echo "   Puerto: $DEPLOY_PORT"
+          echo "   Contraseña: ${#DEPLOY_PASSWORD} caracteres"
+          echo ""
+          
+          if [ "$DEPLOY_PORT" != "21" ]; then
+            echo "⚠️  ADVERTENCIA:"
+            echo "   Se espera Puerto 21 (FTP)"
+            echo "   Se detectó: Puerto $DEPLOY_PORT"
+            echo "   Verifica la configuración si no es correcto"
+            echo ""
+          fi
+          
+          echo "📂 Archivos a transferir:"
+          echo "   Total: $(find . -type f | wc -l) archivos"
+          echo "   Tamaño: $(du -sh . | cut -f1)"
+          echo ""
+
+      - name: "3️⃣ Transferir archivos vía FTP"
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          echo "🚀 INICIANDO TRANSFERENCIA FTP"
+          echo "════════════════════════════════════════"
+          bash scripts/transfer-files.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "." "/var/www/html/instituto"
+        continue-on-error: false
+
+      - name: "✅ Transferencia completada"
+        if: success()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "✅ JOB TRANSFER: Completado exitosamente"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "✓ Archivos transferidos al servidor"
+          echo "✓ Procedimiento: FTP (Puerto 21)"
+          echo ""
+          echo "Próximo: Deploy"
+          echo "════════════════════════════════════════"
+
+      - name: "❌ Diagnóstico en caso de fallo"
+        if: failure()
+        run: |
+          echo "════════════════════════════════════════"
+          echo "❌ JOB TRANSFER: Falló"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "🔍 DIAGNÓSTICO:"
+          echo ""
+          echo "1. Verificar credenciales FTP:"
+          echo "   - DEPLOY_USER debe estar configurado"
+          echo "   - DEPLOY_HOST debe ser accesible"
+          echo "   - DEPLOY_PORT debe ser 21 (FTP)"
+          echo "   - DEPLOY_PASSWORD debe ser correcto"
+          echo ""
+          echo "2. Verificar Puerto:"
+          echo "   - Puerto 21 es el puerto FTP estándar"
+          echo "   - Verifica: Settings > Secrets and variables > Actions"
+          echo ""
+          echo "3. Verificar conectividad FTP:"
+          echo "   - El host debe estar online"
+          echo "   - Firewall no debe bloquear el puerto 21"
+          echo "   - FTP debe estar habilitado en el servidor"
+          echo ""
+          echo "4. Revisar logs:"
+          echo "   - Ver output anterior para detalles"
+          echo "   - Buscar 'ERROR' o 'timeout' en los logs"
+          echo ""
+          echo "5. Permisos:"
+          echo "   - Usuario FTP debe tener permisos para escribir"
+          echo "   - Directorio remoto debe existir"
+          echo "════════════════════════════════════════"
+
+  deploy:
+    runs-on: ubuntu-latest
+    environment: hosting
+    needs: [transfer]
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: "1️⃣ Instalar dependencias"
+        run: |
+          echo "📦 Instalando dependencias..."
+          sudo apt-get update
+          sudo apt-get install -y lftp
+
+      - name: "2️⃣ Verificar archivos remoto antes de deploy"
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
+        run: |
+          echo "🔍 VERIFICACIÓN PRE-DEPLOY"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📂 Verificando contenido remoto vía FTP..."
+          echo ""
+          
+          lftp -e "
+            set ftp:ssl-allow no
+            set net:timeout 30
+            connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT
+            cd /var/www/html/instituto
+            ls -la | head -20
+            quit
+          " 2>&1 || true
+          
+          echo ""
 
       - name: "3️⃣ Ejecutar script de despliegue"
         env:
@@ -308,7 +458,16 @@ jobs:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_PASSWORD: ${{ secrets.DEPLOY_PASSWORD }}
-        run: bash scripts/run-deploy.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "/var/www/html/instituto"
+        run: |
+          echo "⚙️  EJECUTANDO DEPLOY"
+          echo "════════════════════════════════════════"
+          echo ""
+          echo "📋 Información:"
+          echo "   Usuario: $DEPLOY_USER"
+          echo "   Host: $DEPLOY_HOST:$DEPLOY_PORT (FTP)"
+          echo "   Directorio: /var/www/html/instituto"
+          echo ""
+          bash scripts/run-deploy.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "/var/www/html/instituto"
 
       - name: "4️⃣ Verificar archivos desplegados"
         env:
@@ -319,19 +478,49 @@ jobs:
         run: bash scripts/verify-deploy.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "/var/www/html/instituto"
         continue-on-error: true
 
-      - name: "✅ Resumen del despliegue"
-        if: always()
+      - name: "✅ Despliegue completado"
+        if: success()
         run: |
           echo "════════════════════════════════════════════════════"
-          echo "✅ JOB TRANSFER-DEPLOY: Completado"
+          echo "✅ JOB DEPLOY: Completado exitosamente"
           echo "════════════════════════════════════════════════════"
           echo ""
-          echo "📋 Pasos ejecutados:"
-          echo "  1️⃣  Dependencias instaladas"
-          echo "  2️⃣  Transferencia de archivos vía SCP"
-          echo "  3️⃣  Ejecución del script de despliegue"
-          echo "  4️⃣  Verificación de archivos remotos"
-          echo ""
+          echo "✓ Script de despliegue ejecutado"
+          echo "✓ Archivos verificados"
           echo "✓ Despliegue finalizado"
+          echo ""
+          echo "Puedes acceder a tu sitio en: https://$DEPLOY_HOST"
+          echo "════════════════════════════════════════════════════"
+
+      - name: "❌ Diagnóstico en caso de fallo"
+        if: failure()
+        run: |
+          echo "════════════════════════════════════════════════════"
+          echo "❌ JOB DEPLOY: Falló"
+          echo "════════════════════════════════════════════════════"
+          echo ""
+          echo "🔍 Posibles causas:"
+          echo ""
+          echo "1. Script deploy.sh no encontrado:"
+          echo "   - Debe existir en: /var/www/html/instituto/deploy.sh"
+          echo "   - O en: scripts/ localmente"
+          echo ""
+          echo "2. Error de permisos:"
+          echo "   - Usuario $DEPLOY_USER debe tener permisos"
+          echo "   - El directorio debe ser escribible"
+          echo ""
+          echo "3. Error de sintaxis en deploy.sh:"
+          echo "   - Revisar la salida anterior para detalles"
+          echo "   - Usar: bash -x para debug"
+          echo ""
+          echo "4. Dependencias faltantes:"
+          echo "   - Verificar que deploy.sh tenga las dependencias"
+          echo "   - PHP, Composer, Node, etc."
+          echo ""
+          echo "5. Conectividad FTP:"
+          echo "   - Verificar que FTP siga siendo accesible"
+          echo "   - Los archivos se transferirán vía FTP (puerto 21)"
+          echo ""
+          echo "Revisa los logs anteriores para más detalles"
           echo "════════════════════════════════════════════════════"
         

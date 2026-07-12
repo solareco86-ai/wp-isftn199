@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##########################################################
-# Transferir archivos al servidor remoto vía SCP
+# Transferir archivos al servidor remoto vía FTP
 # Uso: ./scripts/transfer-files.sh <user> <host> <port> <password> <source_dir> <dest_dir>
 ##########################################################
 
@@ -14,10 +14,10 @@ DEPLOY_PASSWORD="${4:?Falta: DEPLOY_PASSWORD}"
 SOURCE_DIR="${5:-.}"
 DEST_DIR="${6:/var/www/html/instituto}"
 
-echo "📤 Iniciando transferencia de archivos..."
+echo "📤 Iniciando transferencia de archivos vía FTP..."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "   Origen: $SOURCE_DIR"
-echo "   Destino: $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT:$DEST_DIR"
+echo "   Destino: ftp://$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PORT$DEST_DIR"
 echo ""
 
 # Mostrar estadísticas locales
@@ -38,81 +38,64 @@ fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Crear script expect para SCP
-cat > /tmp/scp_deploy.expect << 'EXPECT_EOF'
-#!/usr/bin/expect -f
-set timeout 600
-set user [lindex $argv 0]
-set host [lindex $argv 1]
-set port [lindex $argv 2]
-set pass [lindex $argv 3]
-set source [lindex $argv 4]
-set dest [lindex $argv 5]
+# Crear script FTP usando lftp
+cat > /tmp/ftp_deploy.sh << 'LFTP_EOF'
+#!/bin/bash
 
-puts "🚀 Transferencia SCP iniciada"
-puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+DEPLOY_USER="$1"
+DEPLOY_HOST="$2"
+DEPLOY_PORT="$3"
+DEPLOY_PASSWORD="$4"
+SOURCE_DIR="$5"
+DEST_DIR="$6"
 
-spawn scp -v -o StrictHostKeyChecking=no -o ConnectTimeout=15 -P $port -r $source $user@$host:$dest
-
-set transfer_started 0
-
-expect {
-    "password:" {
-        puts "✓ Autenticando con contraseña..."
-        send "$pass\r"
-        exp_continue
-    }
-    "Sending file" {
-        if { !$transfer_started } {
-            set transfer_started 1
-            puts "✓ Iniciando envío de archivos..."
-        }
-        exp_continue
-    }
-    "100%" {
-        exp_continue
-    }
-    "Connection refused" {
-        puts "❌ ERROR: Conexión rechazada"
-        puts "   - Verifica host y puerto"
-        exit 1
-    }
-    "No such file or directory" {
-        puts "❌ ERROR: Ruta no válida en destino"
-        exit 1
-    }
-    "Permission denied" {
-        puts "❌ ERROR: Permiso denegado o contraseña incorrecta"
-        exit 1
-    }
-    "Connection timed out" {
-        puts "❌ ERROR: Timeout - conexión perdida"
-        exit 1
-    }
-    timeout {
-        puts "❌ ERROR: Timeout en transferencia (>600s)"
-        exit 1
-    }
-    eof {
-        if { $transfer_started } {
-            puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            puts "✅ Transferencia completada exitosamente"
-            puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        } else {
-            puts "⚠️  Transferencia completada (sin cambios detectados?)"
-        }
-    }
-}
-EXPECT_EOF
-
-chmod +x /tmp/scp_deploy.expect
-
-echo ""
-echo "🔄 Ejecutando transferencia..."
+echo "🚀 Transferencia FTP iniciada"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# Ejecutar el script expect
-/tmp/scp_deploy.expect "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "$SOURCE_DIR" "$DEST_DIR"
+# Usar lftp para transferencia FTP
+lftp -e "
+  set ftp:ssl-allow no
+  set net:timeout 30
+  set net:max-retries 3
+  set xfer:clobber on
+  set cmd:interactive no
+  
+  echo 'Conectando a $DEPLOY_HOST:$DEPLOY_PORT...'
+  connect -u $DEPLOY_USER,$DEPLOY_PASSWORD $DEPLOY_HOST:$DEPLOY_PORT
+  
+  echo 'Cambiando a directorio remoto: $DEST_DIR'
+  cd $DEST_DIR
+  
+  echo 'Iniciando mirror (subida recursiva)...'
+  mirror -R --continue --parallel=4 $SOURCE_DIR .
+  
+  echo 'Cerrando conexión...'
+  quit
+" 2>&1 | tee /tmp/ftp_transfer.log
+
+# Verificar si la transferencia fue exitosa
+if [ ${PIPESTATUS[0]} -eq 0 ]; then
+    echo ""
+    echo "✅ Transferencia FTP completada exitosamente"
+    exit 0
+else
+    echo ""
+    echo "❌ ERROR en transferencia FTP"
+    echo "📋 Revisar logs:"
+    cat /tmp/ftp_transfer.log
+    exit 1
+fi
+LFTP_EOF
+
+chmod +x /tmp/ftp_deploy.sh
+
+echo ""
+echo "🔄 Ejecutando transferencia FTP..."
+echo ""
+
+# Ejecutar el script FTP
+/tmp/ftp_deploy.sh "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "$SOURCE_DIR" "$DEST_DIR"
 
 if [ $? -eq 0 ]; then
     echo ""
