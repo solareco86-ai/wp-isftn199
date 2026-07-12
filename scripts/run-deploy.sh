@@ -114,26 +114,5 @@ else
     echo "   - O incluye el script en tu repositorio"
     echo ""
     exit 1
-        puts "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    }
-}
-EXPECT_EOF
 
-chmod +x /tmp/run_deploy.expect
-
-echo ""
-echo "🔄 Ejecutando deploy.sh..."
-echo ""
-
-# Ejecutar el script expect
-/tmp/run_deploy.expect "$DEPLOY_USER" "$DEPLOY_HOST" "$DEPLOY_PORT" "$DEPLOY_PASSWORD" "$DEPLOY_DIR"
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Despliegue completado"
-    exit 0
-else
-    echo ""
-    echo "❌ Falló la ejecución del despliegue"
-    exit 1
 fi
